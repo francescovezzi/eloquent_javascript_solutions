@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+IMAGE="node:20-alpine"
+CONTAINER_NAME="js_tutorial"
+CONTAINER_WORKDIR="/app"
+CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOST_WORKDIR="$(dirname "${CURRENT_DIR}")"
+HOST_PORT=5137
+CONTAINER_PORT=5137
+CONTAINER_HOME="/home/$CONTAINER_NAME"
+HOST_HOME="$HOME/.js_tutorial"
+DOCKER_NPM_CACHE_FOLDER="$CONTAINER_HOME/cache/.npm"
+HOST_NPM_CACHE_FOLDER="$HOST_HOME/cache/.npm"
+
+
+is_contained() {
+    local parent_dir=$(realpath -m "$1") 
+    local child_path=$(realpath -m "$2")
+    [[ "$child_path" == "$parent_dir"* ]]
+}
+
+get_relative_path() {
+    local from="$1"
+    local to="$2"
+    realpath --relative-to="$from" "$to"
+}
+
+if ! docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+	mkdir -p "$HOST_HOME"
+	mkdir -p "$HOST_NPM_CACHE_FOLDER"
+	mkdir -p "$HOST_WORKDIR"
+	
+	echo "[npm wrapper] Creating container $CONTAINER_NAME..."
+	docker run -d \
+		--init \
+		--rm \
+		--name "$CONTAINER_NAME" \
+		-u $(id -u):$(id -g) \
+		-w "$CONTAINER_WORKDIR" \
+		-p "$HOST_PORT":"$CONTAINER_PORT" \
+		-e HOME="$CONTAINER_HOME" \
+		-e npm_config_cache="$DOCKER_NPM_CACHE_FOLDER" \
+		-v "$HOST_WORKDIR":"$CONTAINER_WORKDIR" \
+		-v "$HOST_HOME":"$CONTAINER_HOME" \
+		"$IMAGE" \
+		sleep infinity
+fi
+
+RUN_HOST_DIR="$PWD"
+if is_contained "$HOST_WORKDIR" "$RUN_HOST_DIR"; then
+	RELATIVE_DIR=$(get_relative_path "$HOST_WORKDIR" "$RUN_HOST_DIR" )
+	docker exec -w "$CONTAINER_WORKDIR/$RELATIVE_DIR" \
+				-it "$CONTAINER_NAME" \
+				npm "$@"
+else
+	echo ${RUN_HOST_DIR} not contained in ${HOST_DIR}
+fi
