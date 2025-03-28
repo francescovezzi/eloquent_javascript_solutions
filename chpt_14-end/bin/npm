@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+IMAGE="node:20-alpine"
+CONTAINER_NAME="js_tutorial"
+WORKDIR="/app"
+CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOST_DIR="$(dirname "${CURRENT_DIR}")"
+echo $HOST_DIR
+HOST_PORT=5137
+CONTAINER_PORT=5137
+
+RUN_HOST_DIR="$PWD"
+
+is_contained() {
+    local parent_dir=$(realpath -m "$1") 
+    local child_path=$(realpath -m "$2")
+    [[ "$child_path" == "$parent_dir"* ]]
+}
+
+get_relative_path() {
+    local from="$1"
+    local to="$2"
+    realpath --relative-to="$from" "$to"
+}
+
+if ! docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+  echo "[npm wrapper] Creating container $CONTAINER_NAME..."
+  docker run -d \
+	--init \
+	--name "$CONTAINER_NAME" \
+	-v "$HOST_DIR":"$WORKDIR" \
+	-w "$WORKDIR" \
+	-p "$HOST_PORT":"$CONTAINER_PORT" \
+	"$IMAGE" \
+	sleep infinity
+fi
+
+if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+  echo "[npm wrapper] Starting container $CONTAINER_NAME..."
+  docker start "$CONTAINER_NAME" > /dev/null
+fi
+
+if is_contained "$HOST_DIR" "$RUN_HOST_DIR"; then
+	RELATIVE_DIR=$(get_relative_path "$HOST_DIR" "$RUN_HOST_DIR" )
+	docker exec -w "$WORKDIR"/"$RELATIVE_DIR" -it "$CONTAINER_NAME" npm "$@"
+else
+	echo ${RUN_HOST_DIR} not contained in ${HOST_DIR}
+fi
